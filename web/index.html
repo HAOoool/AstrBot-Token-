@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token统计 - AstrBot 插件</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            margin: 0;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+            color: #111827;
+            border-left: 5px solid #3b82f6;
+            padding-left: 1rem;
+        }
+        .tabs {
+            margin-bottom: 1rem;
+        }
+        .tab-button {
+            background: #e5e7eb;
+            color: #1f2937;
+            border: none;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-radius: 0.25rem 0.25rem 0 0;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+        .tab-button:hover:not(.active) {
+            background: #d1d5db;
+        }
+        .tab-button.active {
+            background: white;
+            border-bottom: 2px solid #3b82f6;
+            font-weight: bold;
+            color: #1f2937;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        .card h2 {
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-top: 0;
+            margin-bottom: 0.75rem;
+            color: #6b7280;
+        }
+        .card .value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 0.25rem;
+        }
+        .card .unit {
+            font-size: 0.9rem;
+            color: #6b7280;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+            cursor: pointer;
+            user-select: none;
+        }
+        th:hover {
+            background: #e5e7eb;
+        }
+        th .sort-indicator {
+            display: inline-block;
+            margin-left: 5px;
+            font-size: 0.8rem;
+        }
+        tr:hover {
+            background: #f9fafb;
+        }
+        .session-id {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #2563eb;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .session-id:hover {
+            color: #1d4ed8;
+        }
+        .detail-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 1rem;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80%;
+            overflow: auto;
+            padding: 1.5rem;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 0.5rem;
+        }
+        .close {
+            cursor: pointer;
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #6b7280;
+        }
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #9ca3af;
+        }
+        #config-editor {
+            font-family: monospace;
+            font-size: 0.9rem;
+            background: #f9fafb;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            white-space: pre-wrap;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        button:hover {
+            background-color: #2563eb;
+        }
+        #config-status {
+            margin-left: 1rem;
+        }
+        #messages-display {
+            font-size: 0.9rem;
+            max-height: 600px;  /* 增大高度，便于查看长消息 */
+            overflow: auto;
+            background: #f9fafb;
+            border: 1px solid #ddd;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        #messages-display table {
+            font-size: 0.85rem;
+            word-break: break-word;
+        }
+        #messages-display td {
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+        #session-select {
+            width: 100%;
+            max-width: 400px;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            border: 1px solid #d1d5db;
+            background: white;
+            font-size: 0.9rem;
+        }
+        .refresh-btn {
+            background-color: #10b981;
+            margin-left: 0.5rem;
+        }
+        .refresh-btn:hover {
+            background-color: #059669;
+        }
+        .rule-card {
+            background: white;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid #e5e7eb;
+        }
+        .rule-card h4 {
+            margin-top: 0;
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+        }
+        .rule-conditions {
+            margin-bottom: 0.75rem;
+            padding-left: 1rem;
+            border-left: 2px solid #e5e7eb;
+        }
+        .rule-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        .btn-danger {
+            background-color: #ef4444;
+        }
+        .btn-danger:hover {
+            background-color: #dc2626;
+        }
+        .btn-secondary {
+            background-color: #6b7280;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+        .collapse-header {
+            cursor: pointer;
+            background: #f3f4f6;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            margin-bottom: 0.5rem;
+        }
+        .collapse-header:hover {
+            background: #e5e7eb;
+        }
+        .help-card {
+            background: #eef2ff;
+            border-left: 4px solid #3b82f6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .help-card h3 {
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .help-card p {
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+        .help-card code {
+            background: #e5e7eb;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-size: 0.85rem;
+        }
+        .help-card pre {
+            background: #f3f4f6;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            margin: 0.5rem 0;
+        }
+        .help-card ul {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📊 Token统计</h1>
+
+    <div class="tabs">
+        <button class="tab-button active" data-tab="stats">统计</button>
+        <button class="tab-button" data-tab="config">配置管理</button>
+    </div>
+
+    <!-- 统计标签页 -->
+    <div id="stats-tab" class="tab-content active">
+        <div class="stats-grid">
+            <div class="card">
+                <h2>📈 总消耗</h2>
+                <div class="value" id="total-all">-</div>
+                <div class="unit">tokens</div>
+            </div>
+            <div class="card">
+                <h2>📅 今日消耗</h2>
+                <div class="value" id="today-total">-</div>
+                <div class="unit">tokens</div>
+            </div>
+            <div class="card">
+                <h2>📥 总输入</h2>
+                <div class="value" id="total-input">-</div>
+                <div class="unit">tokens</div>
+            </div>
+            <div class="card">
+                <h2>📤 总输出</h2>
+                <div class="value" id="total-output">-</div>
+                <div class="unit">tokens</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>📅 最近7天趋势</h2>
+            <canvas id="daily-chart" style="max-height: 300px;"></canvas>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <h2>💬 会话排行</h2>
+            <p style="font-size: 0.9rem; color: #6b7280;">点击会话ID查看详细每日分类，点击表头可排序</p>
+        </div>
+        <table id="sessions-table">
+            <thead>
+                <tr>
+                    <th data-sort="display_name">会话ID</th>
+                    <th data-sort="total" data-order="desc">总消耗 (tokens) <span class="sort-indicator">▼</span></th>
+                    <th data-sort="plugin_total">插件消耗 (tokens) <span class="sort-indicator"></span></th>
+                    <th data-sort="last_active">最近活跃 <span class="sort-indicator"></span></th>
+                </tr>
+            </thead>
+            <tbody id="session-tbody">
+                <tr><td colspan="4" class="loading">加载中...</td></tr>
+            </tbody>
+        </table>
+        <footer>数据每小时自动刷新，也可手动刷新页面</footer>
+    </div>
+
+    <!-- 配置管理标签页 -->
+    <div id="config-tab" class="tab-content">
+        <h2>⚙️ 插件配置</h2>
+        <p>编辑 <code>config.yaml</code> 文件，保存后需重启 AstrBot 生效。</p>
+
+        <div class="help-card">
+            <h3>📖 配置说明</h3>
+            <p><strong>插件归属规则</strong> 用于将某些消息的 token 统计归入特定插件名下，便于分析各插件消耗。</p>
+            <p>每条规则包含一个插件名称和一组匹配条件，<strong>消息必须同时满足所有条件</strong>才会被计入该插件。</p>
+            <p><strong>可选条件：</strong></p>
+            <ul>
+                <li><code>role</code> - 消息角色：<code>user</code>、<code>assistant</code>、<code>system</code>、<code>function</code></li>
+                <li><code>name_contains</code> - 消息的 name 字段包含指定关键词</li>
+                <li><code>content_startswith</code> - 消息内容以指定字符串开头</li>
+                <li><code>content_contains</code> - 消息内容包含指定字符串</li>
+            </ul>
+            <p><strong>示例：</strong></p>
+            <pre><code>plugins:
+  - name: "示例插件A"
+    match:
+      role: "user"
+      content_contains: "以下是系统自动检索的背景上下文"</code></pre>
+            <p>💡 规则按列表顺序依次匹配，一旦匹配成功就不再检查后面的规则。保存后需重启 AstrBot 生效。</p>
+        </div>
+
+        <div id="graphical-config">
+            <h3>📋 插件归属规则（图形化）</h3>
+            <div id="rules-list"></div>
+            <button id="add-rule-btn" class="btn-sm">+ 添加规则</button>
+            <div style="margin-top: 1rem;">
+                <button id="save-rules-btn">保存规则</button>
+                <span id="graphical-status" style="margin-left: 1rem;"></span>
+            </div>
+        </div>
+
+        <div class="collapse-header" onclick="toggleAdvanced()">
+            <span>🔧 高级模式（直接编辑 YAML）</span>
+        </div>
+        <div id="advanced-editor" style="display: none;">
+            <textarea id="config-editor" rows="20" style="width:100%; font-family: monospace;"></textarea>
+            <div style="margin-top: 1rem;">
+                <button id="save-config">保存配置</button>
+                <span id="config-status"></span>
+            </div>
+            <p style="font-size: 0.9rem; color: #666;">⚠️ 注意：保存前请确保 YAML 格式正确，错误的格式可能导致插件无法加载。</p>
+        </div>
+
+        <h3>📋 会话消息记录</h3>
+        <p>选择会话查看最近一次 LLM 请求的消息列表，帮助编写匹配规则。</p>
+        <div>
+            <select id="session-select">
+                <option value="">-- 选择会话 --</option>
+            </select>
+            <button id="refresh-messages" class="refresh-btn">🔄 刷新当前会话</button>
+        </div>
+        <div id="messages-display">
+            <p class="loading">请选择会话</p>
+        </div>
+    </div>
+</div>
+
+<div id="detail-modal" class="detail-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-title">会话详情</h2>
+            <span class="close" onclick="closeModal()">&times;</span>
+        </div>
+        <div id="modal-body">加载中...</div>
+    </div>
+</div>
+
+<script>
+    let dailyChart = null;
+    let sessionsData = [];
+
+    async function fetchJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    }
+
+    async function loadOverview() {
+        try {
+            const data = await fetchJSON('/api/overview');
+            document.getElementById('total-all').innerText = (data.total_all || 0).toLocaleString();
+            document.getElementById('today-total').innerText = (data.today_total || 0).toLocaleString();
+            document.getElementById('total-input').innerText = (data.total_input || 0).toLocaleString();
+            document.getElementById('total-output').innerText = (data.total_output || 0).toLocaleString();
+        } catch (e) {
+            console.error('加载概览失败', e);
+            ['total-all', 'today-total', 'total-input', 'total-output'].forEach(id => {
+                document.getElementById(id).innerText = '错误';
+            });
+        }
+    }
+
+    async function loadDaily() {
+        try {
+            const data = await fetchJSON('/api/daily?days=7');
+            const dates = data.map(d => d.date.slice(5));
+            const totals = data.map(d => d.total || 0);
+            const inputs = data.map(d => d.input || 0);
+            const outputs = data.map(d => d.output || 0);
+            const ctx = document.getElementById('daily-chart').getContext('2d');
+            if (dailyChart) dailyChart.destroy();
+            dailyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        { label: '总消耗', data: totals, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3, pointBackgroundColor: '#3b82f6', pointRadius: 4 },
+                        { label: '输入', data: inputs, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)', borderDash: [5, 5], tension: 0.3, pointBackgroundColor: '#10b981', pointRadius: 3 },
+                        { label: '输出', data: outputs, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.05)', borderDash: [5, 5], tension: 0.3, pointBackgroundColor: '#f59e0b', pointRadius: 3 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toLocaleString()} tokens` } }
+                    },
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'tokens' } } }
+                }
+            });
+        } catch (e) {
+            console.error('加载每日趋势失败', e);
+        }
+    }
+
+    function renderSessions(sessions) {
+        const tbody = document.getElementById('session-tbody');
+        if (!sessions || sessions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4">暂无数据，请先发送消息触发统计</td></tr>';
+            return;
+        }
+        tbody.innerHTML = '';
+        for (const s of sessions) {
+            const row = tbody.insertRow();
+            const cellId = row.insertCell(0);
+            const displayName = s.display_name || s.session_id || '未知会话';
+            const sessionSpan = document.createElement('span');
+            sessionSpan.className = 'session-id';
+            sessionSpan.innerText = displayName;
+            sessionSpan.onclick = () => showSessionDetail(s.session_id);
+            cellId.appendChild(sessionSpan);
+            row.insertCell(1).innerText = (s.total || 0).toLocaleString();
+            row.insertCell(2).innerText = (s.plugin_total || 0).toLocaleString();
+            row.insertCell(3).innerText = s.last_active || '无数据';
+        }
+    }
+
+    let currentSortField = 'total';
+    let currentSortOrder = 'desc';
+
+    function sortAndRender() {
+        if (!sessionsData || sessionsData.length === 0) {
+            renderSessions([]);
+            return;
+        }
+        const sorted = [...sessionsData];
+        sorted.sort((a, b) => {
+            let aVal = a[currentSortField];
+            let bVal = b[currentSortField];
+            if (aVal === undefined) aVal = '';
+            if (bVal === undefined) bVal = '';
+            if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+            if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+            if (aVal < bVal) return currentSortOrder === 'asc' ? -1 : 1;
+            if (aVal > bVal) return currentSortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+        renderSessions(sorted);
+        const headers = document.querySelectorAll('#sessions-table th');
+        headers.forEach(th => {
+            const field = th.getAttribute('data-sort');
+            const indicator = th.querySelector('.sort-indicator');
+            if (!indicator) return;
+            if (field === currentSortField) {
+                indicator.textContent = currentSortOrder === 'desc' ? '▼' : '▲';
+            } else {
+                indicator.textContent = '';
+            }
+        });
+    }
+
+    async function loadSessions() {
+        try {
+            const sessions = await fetchJSON('/api/sessions');
+            sessionsData = sessions.map(s => ({
+                ...s,
+                display_name: s.display_name || s.session_id,
+                total: s.total || 0,
+                plugin_total: s.plugin_total || 0,
+                last_active: s.last_active || '无数据'
+            }));
+            currentSortField = 'total';
+            currentSortOrder = 'desc';
+            sortAndRender();
+        } catch (e) {
+            console.error('加载会话列表失败', e);
+            document.getElementById('session-tbody').innerHTML = '<tr><td colspan="4">加载失败，请稍后重试</td></tr>';
+        }
+    }
+
+    async function showSessionDetail(sessionId) {
+        const modal = document.getElementById('detail-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        modalTitle.innerText = `会话详情: ${sessionId}`;
+        modalBody.innerHTML = '加载中...';
+        modal.style.display = 'flex';
+        try {
+            const data = await fetchJSON(`/api/session/detail?session_id=${encodeURIComponent(sessionId)}`);
+            if (data.length === 0) {
+                modalBody.innerHTML = '<p>暂无该会话的统计数据。</p>';
+                return;
+            }
+            let html = '<table style="width:100%;"><thead><tr><th>日期</th><th>总消耗</th><th>详细分类</th></tr></thead><tbody>';
+            for (const day of data) {
+                html += `<tr><td>${day.date}</td><td>${(day.total || 0).toLocaleString()} tokens</td><td>${day.details || '无分类数据'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            modalBody.innerHTML = html;
+        } catch (e) {
+            console.error('加载会话详情失败', e);
+            modalBody.innerHTML = '<p>加载失败，请稍后重试。</p>';
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('detail-modal').style.display = 'none';
+    }
+    window.onclick = function(event) {
+        const modal = document.getElementById('detail-modal');
+        if (event.target === modal) closeModal();
+    };
+
+    // 配置管理相关
+    let currentRules = [];
+
+    function parseRulesFromYaml(yamlStr) {
+        try {
+            const data = jsyaml.load(yamlStr);
+            return data.plugins || [];
+        } catch (e) {
+            console.error('解析 YAML 失败', e);
+            return [];
+        }
+    }
+
+    function rulesToYaml(rules) {
+        const doc = { plugins: rules };
+        return jsyaml.dump(doc, { indent: 2 });
+    }
+
+    function renderRules() {
+        const container = document.getElementById('rules-list');
+        if (!container) return;
+        container.innerHTML = '';
+        for (let i = 0; i < currentRules.length; i++) {
+            const rule = currentRules[i];
+            const card = document.createElement('div');
+            card.className = 'rule-card';
+            card.innerHTML = `
+                <h4>规则 ${i+1}: <strong>${escapeHtml(rule.name)}</strong></h4>
+                <div class="rule-conditions">
+                    ${rule.match.role ? `<div>角色: ${escapeHtml(rule.match.role)}</div>` : ''}
+                    ${rule.match.name_contains ? `<div>名称包含: ${escapeHtml(rule.match.name_contains)}</div>` : ''}
+                    ${rule.match.content_startswith ? `<div>内容开头: ${escapeHtml(rule.match.content_startswith)}</div>` : ''}
+                    ${rule.match.content_contains ? `<div>内容包含: ${escapeHtml(rule.match.content_contains)}</div>` : ''}
+                </div>
+                <div class="rule-actions">
+                    <button class="btn-sm btn-secondary" onclick="editRule(${i})">编辑</button>
+                    <button class="btn-sm btn-danger" onclick="deleteRule(${i})">删除</button>
+                </div>
+            `;
+            container.appendChild(card);
+        }
+    }
+
+    function editRule(index) {
+        const rule = currentRules[index];
+        const name = prompt('插件名称', rule.name);
+        if (name === null) return;
+        const match = rule.match || {};
+        const role = prompt('角色 (user/assistant/system/function，留空表示不限制)', match.role || '');
+        const nameContains = prompt('名称包含 (可选)', match.name_contains || '');
+        const contentStartswith = prompt('内容开头 (可选)', match.content_startswith || '');
+        const contentContains = prompt('内容包含 (可选)', match.content_contains || '');
+        const newMatch = {};
+        if (role) newMatch.role = role;
+        if (nameContains) newMatch.name_contains = nameContains;
+        if (contentStartswith) newMatch.content_startswith = contentStartswith;
+        if (contentContains) newMatch.content_contains = contentContains;
+        currentRules[index] = { name: name, match: newMatch };
+        renderRules();
+    }
+
+    function deleteRule(index) {
+        if (confirm('确定删除此规则吗？')) {
+            currentRules.splice(index, 1);
+            renderRules();
+        }
+    }
+
+    function addRule() {
+        const name = prompt('插件名称 (例如 "示例插件A")');
+        if (!name) return;
+        const role = prompt('角色 (user/assistant/system/function，留空表示不限制)', 'user');
+        const nameContains = prompt('名称包含 (可选)');
+        const contentStartswith = prompt('内容开头 (可选)');
+        const contentContains = prompt('内容包含 (可选)');
+        const match = {};
+        if (role) match.role = role;
+        if (nameContains) match.name_contains = nameContains;
+        if (contentStartswith) match.content_startswith = contentStartswith;
+        if (contentContains) match.content_contains = contentContains;
+        currentRules.push({ name: name, match: match });
+        renderRules();
+    }
+
+    async function saveGraphicalRules() {
+        const yamlStr = rulesToYaml(currentRules);
+        try {
+            const res = await fetch('/api/config/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: yamlStr })
+            });
+            const data = await res.json();
+            const statusSpan = document.getElementById('graphical-status');
+            if (data.success) {
+                statusSpan.innerText = '✅ 规则保存成功，请重启 AstrBot 生效。';
+                statusSpan.style.color = 'green';
+                document.getElementById('config-editor').value = yamlStr;
+            } else {
+                statusSpan.innerText = '❌ 保存失败: ' + (data.error || '未知错误');
+                statusSpan.style.color = 'red';
+            }
+        } catch (e) {
+            console.error('保存规则失败', e);
+            document.getElementById('graphical-status').innerText = '❌ 网络错误';
+        }
+    }
+
+    async function loadConfig() {
+        try {
+            const res = await fetch('/api/config/get');
+            const data = await res.json();
+            if (data.content !== undefined) {
+                document.getElementById('config-editor').value = data.content;
+                currentRules = parseRulesFromYaml(data.content);
+                renderRules();
+            } else {
+                document.getElementById('config-editor').value = '# 加载失败\n' + (data.error || '未知错误');
+                currentRules = [];
+                renderRules();
+            }
+        } catch (e) {
+            console.error('加载配置失败', e);
+            document.getElementById('config-editor').value = '# 加载失败，请检查网络或服务状态';
+            currentRules = [];
+            renderRules();
+        }
+    }
+
+    async function saveYamlConfig() {
+        const content = document.getElementById('config-editor').value;
+        const statusSpan = document.getElementById('config-status');
+        statusSpan.innerText = '保存中...';
+        try {
+            const res = await fetch('/api/config/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content })
+            });
+            const data = await res.json();
+            if (data.success) {
+                statusSpan.innerText = '✅ ' + data.message;
+                statusSpan.style.color = 'green';
+                currentRules = parseRulesFromYaml(content);
+                renderRules();
+            } else {
+                statusSpan.innerText = '❌ 保存失败: ' + (data.error || '未知错误');
+                statusSpan.style.color = 'red';
+            }
+        } catch (e) {
+            statusSpan.innerText = '❌ 网络错误: ' + e.message;
+            statusSpan.style.color = 'red';
+        }
+    }
+
+    function toggleAdvanced() {
+        const editorDiv = document.getElementById('advanced-editor');
+        editorDiv.style.display = editorDiv.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function loadSessionSelect() {
+        try {
+            const sessions = await fetchJSON('/api/sessions');
+            const select = document.getElementById('session-select');
+            select.innerHTML = '<option value="">-- 选择会话 --</option>';
+            for (const s of sessions) {
+                const option = document.createElement('option');
+                option.value = s.session_id;
+                option.textContent = s.display_name || s.session_id;
+                select.appendChild(option);
+            }
+        } catch (e) {
+            console.error('加载会话列表失败', e);
+        }
+    }
+
+    async function loadSessionMessages(sessionId) {
+        if (!sessionId) {
+            document.getElementById('messages-display').innerHTML = '<p class="loading">请选择会话</p>';
+            return;
+        }
+        try {
+            const data = await fetchJSON(`/api/session/messages?session_id=${encodeURIComponent(sessionId)}`);
+            const messages = data.messages || [];
+            if (messages.length === 0) {
+                document.getElementById('messages-display').innerHTML = '<p>该会话暂无消息记录。</p>';
+                return;
+            }
+            let html = '<table style="width:100%; border-collapse: collapse;"><thead><tr><th>序号</th><th>方向</th><th>角色</th><th>名称</th><th>内容</th></tr></thead><tbody>';
+            for (let i = 0; i < messages.length; i++) {
+                const msg = messages[i];
+                const role = msg.role || '?';
+                let direction = '';
+                let directionStyle = '';
+                if (role === 'user') { direction = '→ 输入'; directionStyle = 'color: #2980b9;'; }
+                else if (role === 'assistant') { direction = '← 输出'; directionStyle = 'color: #27ae60;'; }
+                else if (role === 'system') { direction = '⚙ 系统'; directionStyle = 'color: #7f8c8d;'; }
+                else direction = '?';
+                const name = msg.name || '-';
+                let content = msg.content || '';
+                if (typeof content !== 'string') {
+                    content = JSON.stringify(content, null, 2);
+                }
+                // 显示完整内容，不再截断
+                html += `
+                    <tr>
+                        <td>${i+1}</td>
+                        <td style="${directionStyle}">${escapeHtml(direction)}</td>
+                        <td>${escapeHtml(role)}</td>
+                        <td>${escapeHtml(name)}</td>
+                        <td style="font-family: monospace; white-space: pre-wrap; word-break: break-word;">${escapeHtml(content)}</td>
+                    </tr>
+                `;
+            }
+            html += '</tbody></table>';
+            document.getElementById('messages-display').innerHTML = html;
+        } catch (e) {
+            console.error('加载消息失败', e);
+            document.getElementById('messages-display').innerHTML = '<p>加载失败</p>';
+        }
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function refreshCurrentSession() {
+        const select = document.getElementById('session-select');
+        const sessionId = select.value;
+        if (!sessionId) { alert('请先选择一个会话'); return; }
+        loadSessionMessages(sessionId);
+    }
+
+    function setupSorting() {
+        const headers = document.querySelectorAll('#sessions-table th');
+        headers.forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.getAttribute('data-sort');
+                if (!field) return;
+                if (currentSortField === field) {
+                    currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
+                } else {
+                    currentSortField = field;
+                    currentSortOrder = 'desc';
+                }
+                sortAndRender();
+            });
+        });
+    }
+
+    document.getElementById('save-config').addEventListener('click', saveYamlConfig);
+    document.getElementById('session-select').addEventListener('change', (e) => loadSessionMessages(e.target.value));
+    document.getElementById('refresh-messages').addEventListener('click', refreshCurrentSession);
+    document.getElementById('add-rule-btn').addEventListener('click', addRule);
+    document.getElementById('save-rules-btn').addEventListener('click', saveGraphicalRules);
+
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tabId = btn.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(`${tabId}-tab`).classList.add('active');
+            if (tabId === 'config') {
+                loadConfig();
+                loadSessionSelect();
+            }
+        });
+    });
+
+    Promise.all([loadOverview(), loadDaily(), loadSessions()]).then(() => {
+        setupSorting();
+    }).catch(e => console.error('初始化失败', e));
+</script>
+</body>
+</html>
