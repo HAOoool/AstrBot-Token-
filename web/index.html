@@ -28,6 +28,45 @@
             border-left: 5px solid #3b82f6;
             padding-left: 1rem;
         }
+        /* 顶部 Token 设置栏 */
+        .token-bar {
+            background: #eef2ff;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            font-size: 0.9rem;
+        }
+        .token-bar span {
+            color: #1f2937;
+        }
+        .token-bar input {
+            padding: 0.3rem 0.6rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.375rem;
+            font-family: monospace;
+            flex: 1;
+            min-width: 200px;
+        }
+        .token-bar button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.3rem 0.8rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .token-bar button:hover {
+            background-color: #2563eb;
+        }
+        .token-status {
+            color: #10b981;
+            font-weight: 500;
+        }
         .tabs {
             margin-bottom: 1rem;
         }
@@ -208,7 +247,7 @@
         }
         #messages-display {
             font-size: 0.9rem;
-            max-height: 600px;  /* 增大高度，便于查看长消息 */
+            max-height: 600px;
             overflow: auto;
             background: #f9fafb;
             border: 1px solid #ddd;
@@ -327,6 +366,14 @@
 </head>
 <body>
 <div class="container">
+    <div class="token-bar">
+        <span>🔑 API Token:</span>
+        <input type="text" id="api-token-input" placeholder="如果插件配置了 webui_token，请在此输入" autocomplete="off">
+        <button id="save-token-btn">保存 Token</button>
+        <span id="token-status" class="token-status">未设置</span>
+        <span style="font-size:0.8rem; color:#6b7280;">（留空则不鉴权）</span>
+    </div>
+
     <h1>📊 Token统计</h1>
 
     <div class="tabs">
@@ -456,14 +503,76 @@
 </div>
 
 <script>
-    let dailyChart = null;
-    let sessionsData = [];
+    // ==================== Token 管理 ====================
+    let currentApiToken = localStorage.getItem('tokenStatsToken') || '';
+    const tokenInput = document.getElementById('api-token-input');
+    const tokenStatusSpan = document.getElementById('token-status');
+    function updateTokenUI() {
+        tokenInput.value = currentApiToken;
+        if (currentApiToken) {
+            tokenStatusSpan.innerText = '已设置';
+            tokenStatusSpan.style.color = '#10b981';
+        } else {
+            tokenStatusSpan.innerText = '未设置';
+            tokenStatusSpan.style.color = '#6b7280';
+        }
+    }
+    function setApiToken(token) {
+        currentApiToken = token || '';
+        if (currentApiToken) {
+            localStorage.setItem('tokenStatsToken', currentApiToken);
+        } else {
+            localStorage.removeItem('tokenStatsToken');
+        }
+        updateTokenUI();
+        // 重新加载所有数据
+        reloadAllData();
+    }
+    document.getElementById('save-token-btn').addEventListener('click', () => {
+        const newToken = tokenInput.value.trim();
+        setApiToken(newToken);
+    });
+    updateTokenUI();
+
+    // 为 fetch 自动添加 Authorization 头
+    async function fetchWithToken(url, options = {}) {
+        const headers = options.headers || {};
+        if (currentApiToken) {
+            headers['X-API-Token'] = currentApiToken;
+        }
+        const res = await fetch(url, { ...options, headers });
+        if (res.status === 401) {
+            // Token 无效，清除并提示
+            alert('Token 无效或已过期，请重新输入正确的 API Token。');
+            setApiToken('');
+            throw new Error('Unauthorized');
+        }
+        return res;
+    }
 
     async function fetchJSON(url) {
-        const res = await fetch(url);
+        const res = await fetchWithToken(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     }
+
+    // 重新加载所有数据（用于 token 变更后）
+    async function reloadAllData() {
+        try {
+            await Promise.all([loadOverview(), loadDaily(), loadSessions()]);
+            // 如果当前在配置页，也重新加载配置
+            if (document.getElementById('config-tab').classList.contains('active')) {
+                loadConfig();
+                loadSessionSelect();
+            }
+        } catch (e) {
+            console.error('重新加载数据失败', e);
+        }
+    }
+
+    // ==================== 原有逻辑 ====================
+    let dailyChart = null;
+    let sessionsData = [];
 
     async function loadOverview() {
         try {
@@ -705,33 +814,54 @@
         renderRules();
     }
 
+    // 修复：图形化保存规则时，保留原配置文件的其他字段（如 log_message_content, webui_token 等）
     async function saveGraphicalRules() {
-        const yamlStr = rulesToYaml(currentRules);
         try {
-            const res = await fetch('/api/config/save', {
+            // 1. 先获取当前完整配置
+            const configRes = await fetchWithToken('/api/config/get');
+            const configData = await configRes.json();
+            if (!configData.content) {
+                throw new Error('无法获取当前配置');
+            }
+            let fullConfig;
+            try {
+                fullConfig = jsyaml.load(configData.content);
+            } catch (e) {
+                throw new Error('解析当前配置失败: ' + e.message);
+            }
+            // 确保 fullConfig 是对象
+            if (!fullConfig || typeof fullConfig !== 'object') {
+                fullConfig = {};
+            }
+            // 2. 更新 plugins 字段
+            fullConfig.plugins = currentRules;
+            // 3. 转换为 YAML 字符串
+            const newYaml = jsyaml.dump(fullConfig, { indent: 2 });
+            // 4. 保存
+            const res = await fetchWithToken('/api/config/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: yamlStr })
+                body: JSON.stringify({ content: newYaml })
             });
             const data = await res.json();
             const statusSpan = document.getElementById('graphical-status');
             if (data.success) {
                 statusSpan.innerText = '✅ 规则保存成功，请重启 AstrBot 生效。';
                 statusSpan.style.color = 'green';
-                document.getElementById('config-editor').value = yamlStr;
+                document.getElementById('config-editor').value = newYaml;
             } else {
                 statusSpan.innerText = '❌ 保存失败: ' + (data.error || '未知错误');
                 statusSpan.style.color = 'red';
             }
         } catch (e) {
             console.error('保存规则失败', e);
-            document.getElementById('graphical-status').innerText = '❌ 网络错误';
+            document.getElementById('graphical-status').innerText = '❌ 保存失败: ' + e.message;
         }
     }
 
     async function loadConfig() {
         try {
-            const res = await fetch('/api/config/get');
+            const res = await fetchWithToken('/api/config/get');
             const data = await res.json();
             if (data.content !== undefined) {
                 document.getElementById('config-editor').value = data.content;
@@ -755,7 +885,7 @@
         const statusSpan = document.getElementById('config-status');
         statusSpan.innerText = '保存中...';
         try {
-            const res = await fetch('/api/config/save', {
+            const res = await fetchWithToken('/api/config/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content })
@@ -824,7 +954,6 @@
                 if (typeof content !== 'string') {
                     content = JSON.stringify(content, null, 2);
                 }
-                // 显示完整内容，不再截断
                 html += `
                     <tr>
                         <td>${i+1}</td>
